@@ -1,3 +1,7 @@
+> **Our demo copy of EAS's contracts, released through CodeRoot to show contract release attestation. Not published, reviewed or endorsed by EAS. The official contracts are EAS's own deployments; this copy is deployed only to Base Sepolia, for the demo.**
+>
+> [NOTICE.md](NOTICE.md) names the upstream commit and lists every change.
+
 # Ethereum Attestation Service
 
 [![Docs](https://img.shields.io/badge/docs-%F0%9F%93%84-blue)](https://eas.eth.link)

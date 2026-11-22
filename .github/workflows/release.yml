@@ -1,0 +1,117 @@
+# Deploys this demo copy of the contracts to Base Sepolia on a v* tag or by hand, attests both
+# runtime code hashes through the CodeRoot index on the chain's EAS predeploy, confirms the records
+# on chain, and builds the CodeRoot submission in a job that holds no key.
+#
+# Environment `base-sepolia` (main and v* tags only):
+#   secrets  DEPLOYER_KEY, ATTESTER_KEY
+#   vars     CODEROOT_ATTESTER (the attester key's address), BASE_SEPOLIA_RPC_URL (optional)
+
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'coderoot-eth/eas-contracts-demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: base-sepolia
+    env:
+      RPC_URL: ${{ vars.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org' }}
+      OUT: ${{ github.workspace }}/release-out
+      COMMIT: ${{ github.sha }}
+      CODEROOT_ATTESTER: ${{ vars.CODEROOT_ATTESTER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: ""
+      - name: Exact pnpm
+        run: npm install -g pnpm@9.15.9 --ignore-scripts && pnpm --version
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.8.7
+      - run: forge build
+
+      - name: Deploy
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+        run: demo/release.sh deploy
+      # The attester key is in scope for this step only.
+      - name: Attest
+        env:
+          ATTESTER_KEY: ${{ secrets.ATTESTER_KEY }}
+        run: demo/release.sh attest
+      - name: Confirm on chain
+        run: demo/release.sh confirm
+      - name: Record
+        run: demo/release.sh record
+
+      - name: Summary
+        run: |
+          r=$OUT/release.json
+          {
+            echo "## Demo copy released on Base Sepolia"
+            echo
+            echo "Commit \`$COMMIT\`, attester \`$(jq -r .attester "$r")\`, CodeRoot index \`$(jq -r .index "$r")\`"
+            echo
+            echo "| contract | address | code hash | record | deploy tx |"
+            echo "|---|---|---|---|---|"
+            jq -r '.contracts[] | "| \(.role) | [`\(.address)`](https://sepolia.basescan.org/address/\(.address)) | `\(.codeHash[0:18])…` | [`\(.uid[0:18])…`](https://base-sepolia.easscan.org/attestation/view/\(.uid)) | [tx](https://sepolia.basescan.org/tx/\(.deployTx)) |"' "$r"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: release-out/
+          if-no-files-found: error
+
+  # The gate does not take contract submissions yet, so this job builds the request and sends nothing.
+  submit:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: release
+      - name: Build the CodeRoot submission (not sent)
+        env:
+          REPO: https://github.com/${{ github.repository }}
+          BUILD_URI: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p submit
+          jq --arg repo "$REPO" --arg build "$BUILD_URI" --arg ref "$REF" '. as $r | {
+            artifact: {kind: "evm-contract-set", chain: "eip155:\(.chainId)",
+              contracts: [.contracts[] | {role, address, codeHash: "keccak256:\(.codeHash[2:])"}]},
+            hashes: [.contracts[] | "keccak256:\(.codeHash[2:])"],
+            coordinates: {registry: "eip155:\(.chainId)", name: "coderoot-eth/eas-contracts-demo", version: $ref},
+            flow: "published",
+            source: {repo: $repo, commit: .commit, build_system: "github-actions", build_uri: $build},
+            signatures: [],
+            evidence: [.contracts[] | {type: "eas-attestation", eas: $r.eas, schema: $r.easSchema, index: $r.index,
+              attester: $r.attester, recipient: .address, uid, tx: .attestTx}],
+            agent: null,
+            submitter_note: "eas-contracts-demo \($ref) via GitHub Actions"
+          }' release/release.json > submit/coderoot-contract-submit.json
+          jq -c '{kind: .artifact.kind, hashes}' submit/coderoot-contract-submit.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: submit
+          path: submit/
