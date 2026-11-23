@@ -5,6 +5,7 @@
 #            CodeRoot index on the chain's EAS predeploy, in one transaction
 #   confirm  read-only: both code hashes are live in the index for the attester
 #   record   COMMIT: writes release.json with the UIDs from the mined receipt
+#   revoke   ATTESTER_KEY: revokes every record in $OUT/release.json in one multiRevoke on the predeploy
 # Always: RPC_URL, OUT (a directory). attest and confirm also take CODEROOT_ATTESTER.
 # The demo copy's own contracts are never used for CodeRoot's records: those go to the predeploy.
 set -euo pipefail
@@ -91,5 +92,19 @@ case "${1:-}" in
     echo "wrote $OUT/release.json"
     ;;
 
-  *) die "usage: release.sh deploy|attest|confirm|record" ;;
+  revoke)
+    : "${ATTESTER_KEY:?ATTESTER_KEY is required}"
+    rel="$OUT/release.json"
+    [ -f "$rel" ] || die "$rel is missing"
+    signer=$(cast wallet address --private-key "$ATTESTER_KEY")
+    [ "$(echo "$signer" | lc)" = "$(jq -r .attester "$rel" | lc)" ] || die "the revoke key is not the release's attester"
+    schema=$(jq -r .easSchema "$rel")
+    revs=$(jq -r '[.contracts[] | "(\(.uid),0)"] | join(",")' "$rel")
+    cast send "$PREDEPLOY_EAS" 'multiRevoke((bytes32,(bytes32,uint256)[])[])' "[($schema,[$revs])]" \
+      --rpc-url "$RPC_URL" --private-key "$ATTESTER_KEY" --json | jq '.data // .' > "$OUT/revoke-receipt.json"
+    [ "$(jq -r .status "$OUT/revoke-receipt.json")" = 0x1 ] || die "revoke transaction failed: $(jq -c . "$OUT/revoke-receipt.json")"
+    echo "revoked in $(jq -r .transactionHash "$OUT/revoke-receipt.json")"
+    ;;
+
+  *) die "usage: release.sh deploy|attest|confirm|record|revoke" ;;
 esac

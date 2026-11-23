@@ -19,8 +19,11 @@ Added files:
 | file | what it does |
 |---|---|
 | `NOTICE.md` | this file |
-| `demo/release.sh` | the release steps: deploy `SchemaRegistry` and `EAS`, attest both runtime code hashes through the CodeRoot index, confirm, record |
+| `demo/release.sh` | the release steps: deploy `SchemaRegistry` and `EAS`, attest both runtime code hashes through the CodeRoot index, confirm, record, and revoke |
 | `.github/workflows/release.yml` | runs those steps on Base Sepolia from CI and builds the CodeRoot submission |
+| `demo/consumer.sh` | a consumer's check before calling: each contract's code hash, read from the chain, must be live in the CodeRoot index |
+| `.github/workflows/consumer.yml` | runs that check, holding no key, against one release run's record |
+| `.github/workflows/revoke.yml` | revokes one release run's records from the attester key |
 
 ## The demo deployment
 
