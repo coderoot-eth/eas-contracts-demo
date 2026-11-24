@@ -1,0 +1,47 @@
+# Revokes every record of one release run, from the attester key, in one transaction.
+name: revoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-run:
+        description: ID of the release run to revoke
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  revoke:
+    if: github.repository == 'coderoot-eth/eas-contracts-demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: base-sepolia
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RPC_URL: ${{ vars.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org' }}
+      OUT: ${{ github.workspace }}/release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: release
+          run-id: ${{ inputs.release-run }}
+          github-token: ${{ github.token }}
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.8.7
+      - name: Revoke
+        env:
+          ATTESTER_KEY: ${{ secrets.ATTESTER_KEY }}
+        run: demo/release.sh revoke
+      - name: Summary
+        run: echo "Revoked release run ${{ inputs.release-run }} in \`$(jq -r .transactionHash release/revoke-receipt.json)\`" >> "$GITHUB_STEP_SUMMARY"
