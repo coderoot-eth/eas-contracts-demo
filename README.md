@@ -1,6 +1,6 @@
 > **Our demo copy of EAS's contracts, released through CodeRoot to show contract release attestation. Not published, reviewed or endorsed by EAS. The official contracts are EAS's own deployments; this copy is deployed only to Base Sepolia, for the demo.**
 >
-> [NOTICE.md](NOTICE.md) names the upstream commit and lists every change.
+> [NOTICE.md](NOTICE.md) names the upstream commit and lists every change. [CODEROOT.md](CODEROOT.md) shows how this copy is released, checked and revoked.
 
 # Ethereum Attestation Service
 
